@@ -81,52 +81,77 @@ resource "google_apigee_developer" "this" {
   user_name  = lookup(each.value, "user_name")
 }
 
-resource "google_apigee_endpoint_attachment" "" {
-  endpoint_attachment_id = ""
-  location               = ""
-  org_id                 = ""
-  service_attachment     = ""
+resource "google_apigee_endpoint_attachment" "this" {
+  for_each               = { for f in var.organization : f.display_name => f if contains(keys(f), "endpoint_attachment") && f.endpoint_attachment != null }
+  endpoint_attachment_id = lookup(each.value, "endpoint_attachment_id")
+  location               = lookup(each.value, "location")
+  org_id                 = google_apigee_organization.this[each.key].id
+  service_attachment     = lookup(each.value, "service_attachment")
 }
 
-resource "google_apigee_env_keystore" "" {
-  env_id = ""
+resource "google_apigee_environment" "this" {
+  for_each          = { for g in var.environment : g.name => g }
+  name              = join("-", [each.value.name, "environment"])
+  org_id            = google_apigee_organization.this[join("-", [each.value.name, "organization"])].id
+  display_name      = each.value.display_name
+  deployment_type   = each.value.deployment_type
+  api_proxy_type    = each.value.api_proxy_type
+  type              = each.value.type
+  forward_proxy_uri = each.value.forward_proxy_uri
+  node_config {
+    min_node_count = each.value.min_node_count
+    max_node_count = each.value.max_node_count
+  }
 }
 
-resource "google_apigee_env_references" "" {
-  env_id        = ""
-  name          = ""
-  refers        = ""
-  resource_type = ""
+resource "google_apigee_env_keystore" "this" {
+  for_each = { for g in var.environment : g.name => g if contains(keys(g), "env_keystore") && g.env_keystore != null }
+  env_id   = google_apigee_environment.this[each.key].id
+  name     = lookup(each.value, "name")
 }
 
-resource "google_apigee_envgroup" "" {
-  name   = ""
-  org_id = ""
+resource "google_apigee_env_references" "this" {
+  for_each      = { for g in var.environment : g.name => g if contains(keys(g), "env_references") && g.env_references != null }
+  env_id        = google_apigee_environment.this[each.key].id
+  name          = lookup(each.value, "name")
+  refers        = lookup(each.value, "refers")
+  resource_type = lookup(each.value, "resource_type")
+  description   = lookup(each.value, "description")
 }
 
-resource "google_apigee_envgroup_attachment" "" {
-  envgroup_id = ""
-  environment = ""
+resource "google_apigee_envgroup" "this" {
+  for_each  = { for g in var.environment : g.name => g if contains(keys(g), "envgroup") && g.envgroup != null }
+  name      = lookup(each.value, "name")
+  org_id    = google_apigee_environment.this[each.key].id
+  hostnames = lookup(each.value, "hostnames")
 }
 
-resource "google_apigee_environment" "" {
-  name   = ""
-  org_id = ""
+resource "google_apigee_envgroup_attachment" "this" {
+  envgroup_id = google_apigee_envgroup.this[0].id
+  environment = google_apigee_environment.this[0].name
 }
 
-resource "google_apigee_environment_iam_member" "" {
-  env_id = ""
-  member = ""
-  org_id = ""
-  role   = ""
+resource "google_apigee_environment_iam_member" "this" {
+  env_id = google_apigee_environment.this[0].id
+  member = var.iam_members.member
+  org_id = google_apigee_organization.this[0].id
+  role   = var.iam_members.role
 }
 
-resource "google_apigee_environment_keyvaluemaps" "" {
-  env_id = ""
-  name   = ""
+resource "google_apigee_environment_keyvaluemaps" "this" {
+  for_each = { for g in var.environment : g.name => g if contains(keys(g), "keyvaluemaps") && g.keyvaluemaps != null }
+  env_id   = google_apigee_environment.this[each.key].id
+  name     = lookup(each.value, "name")
 }
 
-resource "google_apigee_flowhook" "" {
+resource "google_apigee_environment_keyvaluemaps_entries" "this" {
+  for_each           = { for g in var.environment.*.keyvaluemaps : g.name => g if contains(keys(g), "entries") && g.entries != null }
+  env_keyvaluemap_id = google_apigee_environment_keyvaluemaps.this[each.key].id
+  name               = lookup(each.value, "name")
+  value              = lookup(each.value, "value")
+}
+
+/*resource "google_apigee_flowhook" "this" {
   environment     = ""
   flow_hook_point = ""
   org_id          = ""
@@ -142,12 +167,6 @@ resource "google_apigee_instance" "" {
 resource "google_apigee_instance_attachment" "" {
   environment = ""
   instance_id = ""
-}
-
-resource "google_apigee_environment_keyvaluemaps_entries" "" {
-  env_keyvaluemap_id = ""
-  name               = ""
-  value              = ""
 }
 
 resource "google_apigee_keystores_aliases_key_cert_file" "" {
@@ -203,4 +222,4 @@ resource "google_apigee_target_server" "" {
   host   = ""
   name   = ""
   port   = 0
-}
+}*/

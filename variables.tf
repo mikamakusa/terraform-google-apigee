@@ -44,5 +44,50 @@ variable "organization" {
       last_name  = string
       user_name  = string
     })))
+    endpoint_attachment = optional(list(object({
+      endpoint_attachment_id = string
+      location               = string
+      service_attachment     = string
+    })))
   }))
+}
+
+variable "environment" {
+  type = list(object({
+    name              = string
+    display_name      = optional(string)
+    deployment_type   = optional(string)
+    api_proxy_type    = optional(string)
+    type              = optional(string)
+    forward_proxy_uri = optional(string)
+    min_node_count    = optional(string)
+    max_node_count    = optional(string)
+    env_keystore = optional(list(object({
+      name = optional(string)
+    })))
+    env_references = optional(list(object({
+      name          = string
+      refers        = string
+      resource_type = string
+      description   = optional(string)
+    })))
+    envgroup = optional(list(object({
+      name      = string
+      hostnames = optional(list(string))
+    })))
+    keyvaluemaps = optional(list(object({
+      name = string
+      entries = optional(list(object({
+        name  = string
+        value = string
+      })))
+    })))
+  }))
+}
+
+variable "iam_members" {
+  type = object({
+    role   = string
+    member = string
+  })
 }
