@@ -1,3 +1,6 @@
 .idea
 .terraform
 .terraform.lock.hcl
+*/*/.terraform.lock.hcl
+*/*/.terraform
+*/*/registry.opentofu.org

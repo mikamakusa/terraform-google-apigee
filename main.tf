@@ -1,5 +1,5 @@
 resource "google_apigee_organization" "this" {
-  for_each                              = { for a in var.organization : a.display_name => a }
+  for_each                              = { for idx, organization in var.organization : organization.display_name => organization }
   project_id                            = data.google_project.this.project_id
   analytics_region                      = each.value.analytics_region
   api_consumer_data_encryption_key_name = each.value.api_consumer_data_encryption_key_name
@@ -13,20 +13,10 @@ resource "google_apigee_organization" "this" {
   retention                             = each.value.retention
   runtime_database_encryption_key_name  = each.value.runtime_database_encryption_key_name
   runtime_type                          = each.value.runtime_type
-
-  dynamic "properties" {
-    for_each = { for a in var.organization : a.display_name => a if contains(keys(a), "properties") && a.properties != null }
-    content {
-      property {
-        name  = lookup(each.value, "name")
-        value = lookup(each.value, "value")
-      }
-    }
-  }
 }
 
 resource "google_apigee_addons_config" "this" {
-  for_each = { for b in var.organization : b.display_name => b if contains(keys(b), "addons") && b.addons != null }
+  for_each = { for idx, organization in var.organization : organization.display_name => organization }
   org      = google_apigee_organization.this[each.key].name
   addons_config {
     advanced_api_ops_config {
@@ -48,14 +38,14 @@ resource "google_apigee_addons_config" "this" {
 }
 
 resource "google_apigee_api" "this" {
-  for_each      = { for c in var.organization : c.display_name => c if contains(keys(c), "api") && c.api != null }
+  for_each      = { for idx, organization in var.organization : organization.display_name => organization if contains(keys(organization), "api") && organization.api != null }
   config_bundle = lookup(each.value, "config_bundle")
   name          = lookup(each.value, "name")
   org_id        = google_apigee_organization.this[each.key].name
 }
 
 resource "google_apigee_app_group" "this" {
-  for_each     = { for d in var.organization : d.display_name => d if contains(keys(d), "app_group") && d.app_group != null }
+  for_each     = { for idx, organization in var.organization : organization.display_name => organization if contains(keys(organization), "app_group") && organization.app_group != null }
   name         = lookup(each.value, "name")
   org_id       = google_apigee_organization.this[each.key].name
   channel_uri  = lookup(each.value, "channel_uri")
@@ -120,15 +110,16 @@ resource "google_apigee_env_references" "this" {
 }
 
 resource "google_apigee_envgroup" "this" {
-  for_each  = { for g in var.environment : g.name => g if contains(keys(g), "envgroup") && g.envgroup != null }
-  name      = lookup(each.value, "name")
-  org_id    = google_apigee_environment.this[each.key].id
-  hostnames = lookup(each.value, "hostnames")
+  for_each  = { for g, group in var.environment_group : group.name => group }
+  name      = each.value.name
+  org_id    = google_apigee_environment.this[0].id
+  hostnames = each.value.hostnames
 }
 
 resource "google_apigee_envgroup_attachment" "this" {
-  envgroup_id = google_apigee_envgroup.this[0].id
-  environment = google_apigee_environment.this[0].name
+  for_each    = { for i, env in var.environment : env.name => env if contains([for group in var.environment_group : group.name], "default") }
+  envgroup_id = google_apigee_envgroup.this["default"].id
+  environment = google_apigee_environment.this[each.key].name
 }
 
 resource "google_apigee_environment_iam_member" "this" {
@@ -139,9 +130,10 @@ resource "google_apigee_environment_iam_member" "this" {
 }
 
 resource "google_apigee_environment_keyvaluemaps" "this" {
-  for_each = { for g in var.environment : g.name => g if contains(keys(g), "keyvaluemaps") && g.keyvaluemaps != null }
-  env_id   = google_apigee_environment.this[each.key].id
-  name     = lookup(each.value, "name")
+  for_each   = { for g in var.environment : g.name => g if contains(keys(g), "keyvaluemaps") && g.keyvaluemaps != null }
+  env_id     = google_apigee_environment.this[each.key].id
+  name       = lookup(each.value, "name")
+  depends_on = [google_apigee_organization.this, google_apigee_environment.this, google_apigee_instance.this, google_apigee_instance_attachment.this]
 }
 
 resource "google_apigee_environment_keyvaluemaps_entries" "this" {
@@ -151,30 +143,50 @@ resource "google_apigee_environment_keyvaluemaps_entries" "this" {
   value              = lookup(each.value, "value")
 }
 
-/*resource "google_apigee_flowhook" "this" {
-  environment     = ""
-  flow_hook_point = ""
-  org_id          = ""
-  sharedflow      = ""
+resource "google_apigee_flowhook" "this" {
+  for_each          = { for f in var.flowhook : f.flow_hook_point => f }
+  environment       = google_apigee_environment.this[0].id
+  flow_hook_point   = each.value.flow_hook_point
+  org_id            = google_apigee_organization.this[0].id
+  sharedflow        = each.value.sharedflow
+  description       = each.value.description
+  continue_on_error = each.value.continue_on_error
 }
 
-resource "google_apigee_instance" "" {
-  location = ""
-  name     = ""
-  org_id   = ""
+resource "google_apigee_instance" "this" {
+  for_each                 = { for g in var.instance : g.name => g }
+  location                 = each.value.location
+  name                     = each.value.name
+  org_id                   = google_apigee_organization.this[0].id
+  peering_cidr_range       = each.value.peering_cidr_range
+  ip_range                 = each.value.ip_range
+  description              = each.value.description
+  disk_encryption_key_name = each.value.disk_encryption_key_name
+  consumer_accept_list     = each.value.consumer_accept_list
+
+  dynamic "access_logging_config" {
+    for_each = { for g in var.instance : g.name => g if contains(keys(g), "access_logging_config") && g.access_logging_config != null }
+    content {
+      enabled = true
+      filter  = lookup(each.value, "filter")
+    }
+  }
 }
 
-resource "google_apigee_instance_attachment" "" {
-  environment = ""
-  instance_id = ""
+resource "google_apigee_instance_attachment" "this" {
+  for_each    = { for i, env in var.environment : env.name => env if contains([for instance in var.instance : instance.name], "default") }
+  environment = google_apigee_environment.this[0].name
+  instance_id = google_apigee_instance.this["default"].id
 }
 
-resource "google_apigee_keystores_aliases_key_cert_file" "" {
+/*resource "google_apigee_keystores_aliases_key_cert_file" "this" {
   alias       = ""
   cert        = ""
   environment = ""
   keystore    = ""
   org_id      = ""
+  key = ""
+  password = ""
 }
 
 resource "google_apigee_keystores_aliases_pkcs12" "" {
@@ -192,34 +204,58 @@ resource "google_apigee_keystores_aliases_self_signed_cert" "" {
   keystore    = ""
   org_id      = ""
   sig_alg     = ""
-}
-
-resource "google_apigee_nat_address" "" {
-  instance_id = ""
-  name        = ""
-}
-
-resource "google_apigee_sharedflow" "" {
-  config_bundle = ""
-  name          = ""
-  org_id        = ""
-}
-
-resource "google_apigee_sharedflow_deployment" "" {
-  environment   = ""
-  org_id        = ""
-  revision      = ""
-  sharedflow_id = ""
-}
-
-resource "google_apigee_sync_authorization" "" {
-  identities = []
-  name       = ""
-}
-
-resource "google_apigee_target_server" "" {
-  env_id = ""
-  host   = ""
-  name   = ""
-  port   = 0
 }*/
+
+resource "google_apigee_nat_address" "this" {
+  for_each    = { for g in var.instance : g.name => g if contains(keys(g), "nat_address") && g.nat_address != null }
+  instance_id = google_apigee_instance.this[each.key].id
+  name        = lookup(each.value, "name")
+  activate    = lookup(each.value, "activate")
+}
+
+resource "google_apigee_sharedflow" "this" {
+  for_each      = { for g in var.organization : g.display_name => g if contains(keys(g), "sharedflow") && g.sharedflow != null }
+  config_bundle = lookup(each.value, "config_bundle")
+  name          = lookup(each.value, "name")
+  org_id        = google_apigee_organization.this[each.key].id
+}
+
+resource "google_apigee_sharedflow_deployment" "this" {
+  for_each      = { for g in var.organization : g.display_name => g if contains(keys(g), "sharedflow") && g.sharedflow != null && g.sharedflow.*.revision != null }
+  environment   = google_apigee_environment.this[0].id
+  org_id        = google_apigee_organization.this[0].id
+  revision      = lookup(each.value, "revision")
+  sharedflow_id = google_apigee_sharedflow.this[0].id
+}
+
+resource "google_apigee_sync_authorization" "this" {
+  for_each   = { for g in var.organization : g.display_name => g if contains(keys(g), "identities") && g.identities != null }
+  identities = lookup(each.value, "identities")
+  name       = google_apigee_organization.this[0].name
+}
+
+resource "google_apigee_target_server" "this" {
+  for_each    = { for g in var.environment : g.name => g if contains(keys(g), "target") && g.target != null }
+  env_id      = google_apigee_environment.this[each.key].id
+  host        = lookup(each.value, "host")
+  name        = lookup(each.value, "name")
+  port        = lookup(each.value, "port")
+  description = lookup(each.value, "description")
+  is_enabled  = lookup(each.value, "is_enabled")
+  protocol    = lookup(each.value, "protocol")
+
+  dynamic "s_sl_info" {
+    for_each = { for g in var.environment.*.target : g.name => g if contains(keys(g), "ssl") && g.ssl != null }
+    content {
+
+      enabled                  = lookup(each.value, "enabled")
+      client_auth_enabled      = lookup(each.value, "client_auth_enabled")
+      key_store                = lookup(each.value, "key_store")
+      key_alias                = lookup(each.value, "key_alias")
+      trust_store              = lookup(each.value, "trust_store")
+      ignore_validation_errors = lookup(each.value, "ignore_validation_errors")
+      protocols                = lookup(each.value, "protocols")
+      ciphers                  = lookup(each.value, "ciphers")
+    }
+  }
+}
